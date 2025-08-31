@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useWalletContext } from '../contexts/WalletContext';
-import { uploadMultipleAudioFilesUnified } from '../utils/audioUploadUnified';
 import ConfirmModal from './ConfirmModal';
 
 interface RecordingPageProps {
@@ -754,7 +753,7 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
     return arrayBuffer;
   };
 
-  // 提交所有录音的处理函数 - 修改为下载最新录音并过滤超时音频，同时上传到Supabase
+  // 提交所有录音的处理函数 - 修改为下载最新录音并过滤超时音频
   const handleSubmitAll = async () => {
     console.log('handleSubmitAll 被调用');
     console.log('所有录音完成，开始最终提交');
@@ -840,43 +839,8 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         }
       }
       
-      // 上传到云端存储（如果用户已连接钱包）
-      // 会根据 NEXT_PUBLIC_STORAGE_PROVIDER 环境变量自动选择 TOS 或 Supabase
-      if (isConnected && account && audioUploadData.length > 0) {
-        if (downloadButton) {
-          downloadButton.textContent = '正在上传到云端...';
-        }
-        
-        try {
-          const uploadResult = await uploadMultipleAudioFilesUnified(
-            audioUploadData,
-            account,
-            {
-              audioQuality: 'high',
-              onProgress: (completed, total, currentFile) => {
-                if (downloadButton) {
-                  downloadButton.textContent = `上传中... ${completed}/${total}`;
-                }
-                console.log(`上传进度: ${completed}/${total}, 当前文件: ${currentFile}`);
-              },
-              concurrent: false // 使用串行上传，更稳定
-            }
-          );
-          
-          console.log('上传结果:', uploadResult);
-          
-          // 显示上传结果
-          if (uploadResult.success) {
-            console.log(`成功上传 ${uploadResult.summary.successful} 个文件到 Supabase`);
-          } else {
-            console.warn('部分文件上传失败:', uploadResult.summary.errors);
-          }
-        } catch (uploadError) {
-          console.error('上传到 Supabase 失败:', uploadError);
-        }
-      } else if (!isConnected) {
-        console.log('用户未连接钱包，跳过云端上传');
-      }
+      // 上传到云端存储功能已移除
+      // 现在只支持本地下载
       
       // 恢复按钮状态
       if (downloadButton) {
