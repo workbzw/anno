@@ -45,18 +45,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 获取存储提供商（暂时注释 TOS，强制使用 Supabase）
-    console.log('注意：TOS 存储功能已被注释，使用 Supabase 存储')
-    // const storageProvider = await StorageFactory.getStorageProvider()
-    
-    // 强制使用 Supabase 存储
-    const { SupabaseStorageProvider } = await import('@/app/lib/storage/supabaseStorage')
-    const supabaseConfig = {
-      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      bucketName: 'audio-recordings'
-    }
-    const storageProvider = new SupabaseStorageProvider(supabaseConfig)
+    // 获取存储提供商（自动根据配置选择 TOS 或 Supabase）
+    const storageProvider = await StorageFactory.getStorageProvider()
     
     // 生成文件名
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
