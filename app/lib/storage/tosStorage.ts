@@ -49,8 +49,8 @@ export class TOSStorageProvider implements StorageProvider {
     })
 
     // 创建 TOS 客户端
-    // 根据错误信息，尝试不同的配置方式
-    const tosConfig = {
+    // 根据 TOS SDK 的类型定义，需要使用正确的配置接口
+    const tosConfig: any = {
       region: config.region,
       accessKeyId: config.accessKeyId,
       accessKeySecret: config.accessKeySecret
