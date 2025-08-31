@@ -840,7 +840,8 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         }
       }
       
-      // 上传到 Supabase（如果用户已连接钱包）
+      // 上传到云端存储（如果用户已连接钱包）
+      // 注意：TOS 存储功能已被暂时注释，当前使用 Supabase 存储
       if (isConnected && account && audioUploadData.length > 0) {
         if (downloadButton) {
           downloadButton.textContent = '正在上传到云端...';

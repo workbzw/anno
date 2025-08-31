@@ -28,8 +28,14 @@ export class StorageFactory {
       
       switch (config.provider) {
         case 'tos':
-          const { TOSStorageProvider } = await import('@/app/lib/storage/tosStorage')
-          this.instance = new TOSStorageProvider(config.config as any)
+          // 暂时注释 TOS 存储功能
+          console.log('注意：TOS 存储功能已被注释，自动回退到 Supabase 存储')
+          // const { TOSStorageProvider } = await import('@/app/lib/storage/tosStorage')
+          // this.instance = new TOSStorageProvider(config.config as any)
+          // 回退到 Supabase
+          const { SupabaseStorageProvider: FallbackSupabaseProvider } = await import('@/app/lib/storage/supabaseStorage')
+          const supabaseConfig = this.getStorageConfig('supabase')
+          this.instance = new FallbackSupabaseProvider(supabaseConfig.config as any)
           break
         case 'supabase':
         default:
@@ -42,11 +48,14 @@ export class StorageFactory {
     return this.instance!
   }
   
-  private static getStorageConfig(): StorageConfig {
+  private static getStorageConfig(forceProvider?: 'supabase' | 'tos'): StorageConfig {
     // 从环境变量或配置文件读取存储配置
-    const provider = (process.env.NEXT_PUBLIC_STORAGE_PROVIDER as 'supabase' | 'tos') || 'supabase'
+    const provider = forceProvider || (process.env.NEXT_PUBLIC_STORAGE_PROVIDER as 'supabase' | 'tos') || 'supabase'
     
     if (provider === 'tos') {
+      // 暂时注释 TOS 配置，直接返回 Supabase 配置
+      console.log('注意：TOS 配置已被注释，使用 Supabase 代替')
+      /*
       // 修复 TOS endpoint 配置问题
       // TOS SDK 需要使用 TOS 专用的 endpoint 格式，不是 S3 兼容格式
       let endpoint = process.env.TOS_ENDPOINT
@@ -68,6 +77,7 @@ export class StorageFactory {
           endpoint: endpoint
         }
       }
+      */
     }
     
     return {
