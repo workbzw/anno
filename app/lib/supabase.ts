@@ -1,11 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-// 从环境变量获取配置
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+// 从环境变量获取配置，添加构建时的安全检查
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-// 创建 Supabase 客户端
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// 创建 Supabase 客户端，只在有有效配置时创建
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null
 
 // 数据库表类型定义
 export interface WalletUser {
@@ -48,9 +50,19 @@ export interface UserStats {
 
 // 数据库操作函数
 export class WalletDatabase {
+  // 检查 Supabase 配置是否可用
+  private static checkSupabaseConfig() {
+    if (!supabase) {
+      throw new Error('Supabase 配置不可用，请检查环境变量 NEXT_PUBLIC_SUPABASE_URL 和 NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    }
+    return supabase
+  }
+
   // 创建或更新用户
   static async upsertUser(walletAddress: string, userInfo: any = {}) {
-    const { data, error } = await supabase
+    const client = this.checkSupabaseConfig()
+    
+    const { data, error } = await client
       .from('wallet_users')
       .upsert({
         wallet_address: walletAddress,
@@ -67,7 +79,9 @@ export class WalletDatabase {
 
   // 添加录音贡献记录
   static async addRecordingContribution(contribution: Omit<RecordingContribution, 'id' | 'created_at'>) {
-    const { data, error } = await supabase
+    const client = this.checkSupabaseConfig()
+    
+    const { data, error } = await client
       .from('recording_contributions')
       .insert({
         ...contribution,
@@ -81,7 +95,9 @@ export class WalletDatabase {
 
   // 添加审核活动记录
   static async addReviewActivity(activity: Omit<ReviewActivity, 'id' | 'created_at'>) {
-    const { data, error } = await supabase
+    const client = this.checkSupabaseConfig()
+    
+    const { data, error } = await client
       .from('review_activities')
       .insert({
         ...activity,
@@ -95,8 +111,10 @@ export class WalletDatabase {
 
   // 获取用户统计数据
   static async getUserStats(walletAddress: string): Promise<UserStats> {
+    const client = this.checkSupabaseConfig()
+    
     // 获取录音统计
-    const { data: recordings, error: recordingsError } = await supabase
+    const { data: recordings, error: recordingsError } = await client
       .from('recording_contributions')
       .select('duration')
       .eq('wallet_address', walletAddress)
@@ -104,7 +122,7 @@ export class WalletDatabase {
     if (recordingsError) throw recordingsError
 
     // 获取审核统计
-    const { data: reviews, error: reviewsError } = await supabase
+    const { data: reviews, error: reviewsError } = await client
       .from('review_activities')
       .select('items_reviewed, accuracy')
       .eq('wallet_address', walletAddress)
@@ -112,7 +130,7 @@ export class WalletDatabase {
     if (reviewsError) throw reviewsError
 
     // 获取最后活动时间
-    const { data: lastActivity, error: lastActivityError } = await supabase
+    const { data: lastActivity, error: lastActivityError } = await client
       .from('recording_contributions')
       .select('created_at')
       .eq('wallet_address', walletAddress)
@@ -141,7 +159,9 @@ export class WalletDatabase {
 
   // 批量添加活动记录
   static async batchAddActivities(activities: any[]) {
-    const { data, error } = await supabase
+    const client = this.checkSupabaseConfig()
+    
+    const { data, error } = await client
       .from('batch_activities')
       .insert(activities.map(activity => ({
         ...activity,
