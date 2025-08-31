@@ -6,6 +6,7 @@ import RecordingControls from './RecordingControls';
 import AudioPlayer from './AudioPlayer';
 import { useRecordingState, useRecordingRefs, useRecordingLogic } from './RecordingHooks';
 import { MAX_RECORDING_DURATION } from './RecordingTypes';
+import ConfirmModal from './ConfirmModal';
 
 interface RecordingPageProps {
   onBack: () => void;
@@ -16,6 +17,9 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
   const state = useRecordingState();
   const refs = useRecordingRefs();
   const { startPreRecording } = useRecordingLogic(state, refs);
+  
+  // 添加确认弹窗状态
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
   // 开始录音函数
   const handleStartRecording = useCallback(async () => {
@@ -229,6 +233,37 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
     console.log('跳过当前句子');
   }, [state]);
 
+  // 处理确认下一轮录音
+  const handleConfirmNextRecording = () => {
+    setIsConfirmModalOpen(false);
+    // 重置录音状态，开始新一轮录音
+    startNewRecording();
+  };
+
+  const startNewRecording = () => {
+    // 重置所有录音相关状态
+    state.setCurrentSentenceIndex(0);
+    state.setRecordedAudio(null);
+    state.setSentenceAudios(new Array(state.sentences.length).fill(null));
+    state.setCompletedSentences(new Array(state.sentences.length).fill(false));
+    state.setCompletedCount(0);
+    state.setTempRecordings(new Array(state.sentences.length).fill(null));
+    state.setRecordingTime(0);
+    state.setRecordingDuration(0);
+    
+    // 重置录音状态
+    state.setIsRecording(false);
+    state.setIsPlaying(false);
+    
+    // 清理录音引用
+    if (refs.mediaRecorderRef.current) {
+      refs.mediaRecorderRef.current = null;
+    }
+    refs.audioChunksRef.current = [];
+    
+    console.log('开始新一轮录音，状态已重置');
+  };
+
   // 下载所有录音
   const downloadAllRecordings = useCallback(async () => {
     try {
@@ -267,13 +302,17 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         }, 2000);
       }
 
-      let message = `下载完成！成功下载 ${successCount} 个文件`;
-      if (skippedCount > 0) {
-        message += `\n跳过 ${skippedCount} 个超时文件:\n${skippedFiles.join('\n')}`;
-      }
-      message += '\n请检查浏览器的下载文件夹。';
+      // 显示下载结果(已移除alert，直接显示弹窗)
+      // let message = `下载完成！成功下载 ${successCount} 个文件`;
+      // if (skippedCount > 0) {
+      //   message += `\n跳过 ${skippedCount} 个超时文件:\n${skippedFiles.join('\n')}`;
+      // }
+      // message += '\n请检查浏览器的下载文件夹。';
       
-      alert(message);
+      // alert(message); // 已移除此alert
+      
+      // 提交成功后直接显示确认弹窗，询问是否开始下一轮录音
+      setIsConfirmModalOpen(true);
       
     } catch (error) {
       console.error('下载录音文件失败:', error);
@@ -369,6 +408,7 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
     console.log('从 localStorage 获取的原始数据:', storedSentences);
     
     let sentencesToUse: string[] = [];
+    let needsUpdate = false;
     
     if (storedSentences) {
       try {
@@ -376,16 +416,34 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         console.log('解析后的句子数据:', parsedSentences);
         
         if (Array.isArray(parsedSentences) && parsedSentences.length > 0) {
-          sentencesToUse = parsedSentences;
+          // 检查是否都是空字符串，如果是则需要更新
+          const hasEmptyStrings = parsedSentences.some(sentence => sentence === '' || sentence.trim() === '');
+          if (hasEmptyStrings) {
+            console.log('检测到空句子，需要更新为粤语句子');
+            needsUpdate = true;
+          } else {
+            sentencesToUse = parsedSentences;
+          }
+        } else {
+          needsUpdate = true;
         }
       } catch (error) {
         console.error('解析句子数据失败:', error);
+        needsUpdate = true;
       }
+    } else {
+      needsUpdate = true;
     }
     
-    if (sentencesToUse.length === 0) {
-      sentencesToUse = ["", "", "", "", ""];
-      console.log('使用默认句子数据:', sentencesToUse);
+    if (needsUpdate || sentencesToUse.length === 0) {
+      sentencesToUse = [
+        "你好，请问去机场点去？",
+        "今日天气真系好靓，出去行下啦。",
+        "我在做紧习作，等陣先联络你。",
+        "唔好意思，就快到了，再等五分钟。",
+        "啲，明日一齐食饭，你看点好？"
+      ];
+      console.log('使用默认粤语句子数据:', sentencesToUse);
       localStorage.setItem('sentences', JSON.stringify(sentencesToUse));
     }
     
@@ -584,6 +642,13 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
           </div>
         </div>
       </div>
+      
+      <ConfirmModal
+        isOpen={isConfirmModalOpen}
+        onConfirm={handleConfirmNextRecording}
+        onCancel={() => setIsConfirmModalOpen(false)}
+        message="此批次录音已完成，是否进行下一批次录音？"
+      />
     </div>
   );
 }

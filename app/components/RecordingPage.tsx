@@ -1,12 +1,18 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useWalletContext } from '../contexts/WalletContext';
+import { uploadMultipleAudioFilesUnified } from '../utils/audioUploadUnified';
+import ConfirmModal from './ConfirmModal';
 
 interface RecordingPageProps {
   onBack?: () => void;
 }
 
 export default function RecordingPage({ onBack }: RecordingPageProps) {
+  // 获取钱包上下文
+  const { account, isConnected } = useWalletContext();
+  
   const [sentences, setSentences] = useState<string[]>([]);
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
@@ -32,6 +38,7 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
   const [tempRecordings, setTempRecordings] = useState<(string | null)[]>([]);
   const [warmupProgress, setWarmupProgress] = useState(0);
   const [warmupMessage, setWarmupMessage] = useState('正在初始化录音系统...');
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
 
   // 引用
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -448,6 +455,7 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
     console.log('从 localStorage 获取的原始数据:', storedSentences);
     
     let sentencesToUse: string[] = [];
+    let needsUpdate = false;
     
     if (storedSentences) {
       try {
@@ -455,23 +463,35 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         console.log('解析后的句子数据:', parsedSentences);
         
         if (Array.isArray(parsedSentences) && parsedSentences.length > 0) {
-          sentencesToUse = parsedSentences;
+          // 检查是否都是空字符串，如果是则需要更新
+          const hasEmptyStrings = parsedSentences.some(sentence => sentence === '' || sentence.trim() === '');
+          if (hasEmptyStrings) {
+            console.log('检测到空句子，需要更新为粤语句子');
+            needsUpdate = true;
+          } else {
+            sentencesToUse = parsedSentences;
+          }
+        } else {
+          needsUpdate = true;
         }
       } catch (error) {
         console.error('解析句子数据失败:', error);
+        needsUpdate = true;
       }
+    } else {
+      needsUpdate = true;
     }
     
-    // 如果没有存储的句子数据，使用默认句子
-    if (sentencesToUse.length === 0) {
+    // 如果没有存储的句子数据或需要更新，使用默认粤语句子
+    if (needsUpdate || sentencesToUse.length === 0) {
       sentencesToUse = [
-        "",
-        "",
-        "",
-        "",
-        ""
+        "你好，请问去机场点去？",
+        "今日天气真系好靓，出去行下啦。",
+        "我在做紧习作，等陣先联络你。",
+        "唔好意思，就快到了，再等五分钟。",
+        "啲，明日一齐食饭，你看点好？"
       ];
-      console.log('使用默认句子数据:', sentencesToUse);
+      console.log('使用默认粤语句子数据:', sentencesToUse);
       
       // 将默认句子保存到 localStorage
       localStorage.setItem('sentences', JSON.stringify(sentencesToUse));
@@ -734,7 +754,7 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
     return arrayBuffer;
   };
 
-  // 提交所有录音的处理函数 - 修改为下载最新录音并过滤超时音频
+  // 提交所有录音的处理函数 - 修改为下载最新录音并过滤超时音频，同时上传到Supabase
   const handleSubmitAll = async () => {
     console.log('handleSubmitAll 被调用');
     console.log('所有录音完成，开始最终提交');
@@ -779,6 +799,15 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
       
       console.log('最终下载的录音数组:', finalAudios);
       
+      // 准备上传数据（只包含有效的录音）
+      const audioUploadData: Array<{
+        audioUrl: string;
+        sentenceId: string;
+        sentenceText: string;
+        duration?: number;
+        filename: string;
+      }> = [];
+      
       // 下载所有录音为WAV文件，并统计结果
       let successCount = 0;
       let skippedCount = 0;
@@ -792,6 +821,15 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
           
           if (result.success) {
             successCount++;
+            
+            // 添加到上传列表
+            audioUploadData.push({
+              audioUrl,
+              sentenceId: `sentence_${i + 1}`,
+              sentenceText: sentences[i] || '',
+              duration: result.duration,
+              filename
+            });
           } else {
             skippedCount++;
             skippedFiles.push(`句子${i + 1}: ${result.error}`);
@@ -800,6 +838,43 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
           // 添加延迟，避免浏览器阻止多个下载
           await new Promise(resolve => setTimeout(resolve, 500));
         }
+      }
+      
+      // 上传到 Supabase（如果用户已连接钱包）
+      if (isConnected && account && audioUploadData.length > 0) {
+        if (downloadButton) {
+          downloadButton.textContent = '正在上传到云端...';
+        }
+        
+        try {
+          const uploadResult = await uploadMultipleAudioFilesUnified(
+            audioUploadData,
+            account,
+            {
+              audioQuality: 'high',
+              onProgress: (completed, total, currentFile) => {
+                if (downloadButton) {
+                  downloadButton.textContent = `上传中... ${completed}/${total}`;
+                }
+                console.log(`上传进度: ${completed}/${total}, 当前文件: ${currentFile}`);
+              },
+              concurrent: false // 使用串行上传，更稳定
+            }
+          );
+          
+          console.log('上传结果:', uploadResult);
+          
+          // 显示上传结果
+          if (uploadResult.success) {
+            console.log(`成功上传 ${uploadResult.summary.successful} 个文件到 Supabase`);
+          } else {
+            console.warn('部分文件上传失败:', uploadResult.summary.errors);
+          }
+        } catch (uploadError) {
+          console.error('上传到 Supabase 失败:', uploadError);
+        }
+      } else if (!isConnected) {
+        console.log('用户未连接钱包，跳过云端上传');
       }
       
       // 恢复按钮状态
@@ -811,14 +886,22 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         }, 2000);
       }
       
-      // 显示下载结果
-      let message = `下载完成！成功下载 ${successCount} 个文件`;
-      if (skippedCount > 0) {
-        message += `\n跳过 ${skippedCount} 个超时文件:\n${skippedFiles.join('\n')}`;
-      }
-      message += '\n请检查浏览器的下载文件夹。';
+      // 显示下载结果(已移除alert，直接显示弹窗)
+      // let message = `下载完成！成功下载 ${successCount} 个文件`;
+      // if (isConnected && account && audioUploadData.length > 0) {
+      //   message += `\n同时已上传到云端存储`;
+      // } else if (!isConnected) {
+      //   message += `\n\n提示：连接钱包后可自动上传到云端存储`;
+      // }
+      // if (skippedCount > 0) {
+      //   message += `\n跳过 ${skippedCount} 个超时文件:\n${skippedFiles.join('\n')}`;
+      // }
+      // message += '\n请检查浏览器的下载文件夹。';
       
-      alert(message);
+      // alert(message); // 已移除此alert
+      
+      // 提交成功后直接显示确认弹窗，询问是否开始下一轮录音
+      setIsConfirmModalOpen(true);
       
     } catch (error) {
       console.error('下载录音文件失败:', error);
@@ -1008,8 +1091,46 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
   // 删除所有注释掉的重复代码
   // 清理完毕，直接进入return语句
 
+  const handleSubmitRecording = async () => {
+
+    // Show confirmation modal
+    setIsConfirmModalOpen(true);
+  };
+
+  const handleConfirmNextRecording = () => {
+    setIsConfirmModalOpen(false);
+    // Reset recording state and start new recording
+    // This would typically involve resetting state variables
+    // and triggering the start of a new recording session
+    startNewRecording();
+  };
+
+  const startNewRecording = () => {
+    // 重置录音状态，开始新一轮录音
+    setCurrentSentenceIndex(0);
+    setRecordedAudio(null);
+    setSentenceAudios(new Array(sentences.length).fill(null));
+    setCompletedSentences(new Array(sentences.length).fill(false));
+    setCompletedCount(0);
+    setTempRecordings(new Array(sentences.length).fill(null));
+    setRecordingTime(0);
+    setRecordingDuration(0);
+    
+    // 重置录音状态
+    setIsRecording(false);
+    setIsPlaying(false);
+    
+    // 清理录音引用
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current = null;
+    }
+    audioChunksRef.current = [];
+    
+    console.log('开始新一轮录音，状态已重置');
+  };
+
   return (
-    <>
+    <div>
       {/* CSS样式 */}
       <style jsx>{`
         @keyframes shimmer {
@@ -1514,6 +1635,12 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         </div>
       </div>
       </div>
-    </>
+      <ConfirmModal
+        isOpen={isConfirmModalOpen}
+        onConfirm={handleConfirmNextRecording}
+        onCancel={() => setIsConfirmModalOpen(false)}
+        message="此批次录音已完成，是否进行下一批次录音？"
+      />
+    </div>
   );
 }

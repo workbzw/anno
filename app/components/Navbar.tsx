@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from "react";
+import WalletButton from './WalletButton';
 
 interface NavbarProps {
   currentPage: string;
@@ -108,11 +109,12 @@ export default function Navbar({ currentPage, onPageChange }: NavbarProps) {
             </span>
           </div>
 
-          {/* 右侧按钮 - 绝对定位到右侧 */}
+          {/* 右侧按钮 - 绝对定位到右侧，移动端优化 */}
           <div className="absolute right-0 flex items-center">
-            <button className="text-gray-700 hover:text-gray-900 px-4 py-2 rounded-lg hover:bg-gray-200/70 transition-all duration-200 backdrop-blur-sm">
-              登录/注册
-            </button>
+            {/* 确保在移动端有足够的右边距 */}
+            <div className="pr-1 sm:pr-0">
+              <WalletButton />
+            </div>
           </div>
         </div>
 
@@ -143,6 +145,11 @@ export default function Navbar({ currentPage, onPageChange }: NavbarProps) {
                 onClick={() => handleMenuItemClick('about')}
               >
                 关于我们
+              </div>
+              
+              {/* 移动端钱包按钮 */}
+              <div className="px-3 py-2">
+                <WalletButton />
               </div>
             </div>
           </div>

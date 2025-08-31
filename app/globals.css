@@ -396,3 +396,26 @@ body {
     max-width: 600px;
   }
 }
+
+/* 移动端钱包按钮优化 */
+@media (max-width: 640px) {
+  /* 确保钱包按钮在小屏幕上不会过大 */
+  .wallet-button-mobile {
+    max-width: 120px;
+    font-size: 0.75rem;
+  }
+  
+  /* 调整导航栏在移动端的padding */
+  .navbar-mobile {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  
+  /* 优化弹出菜单在移动端的显示 */
+  .dropdown-mobile {
+    left: auto;
+    right: 4px;
+    min-width: 200px;
+    max-width: calc(100vw - 16px);
+  }
+}

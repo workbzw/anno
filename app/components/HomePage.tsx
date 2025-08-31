@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import WalletApiDemo from './WalletApiDemo';
 
 export default function HomePage() {
   const [activeTab, setActiveTab] = useState('voice');
@@ -46,6 +47,12 @@ export default function HomePage() {
     { id: 'report-issues', label: '举报性内容' }
   ];
 
+  const walletNavigationItems = [
+    { id: 'wallet-api-demo', label: '钱包API演示' },
+    { id: 'wallet-usage', label: '使用说明' },
+    { id: 'api-examples', label: 'API示例' }
+  ];
+
   const reviewNavigationItems = [
     { id: 'review-overview', label: '审核概述' },
     { id: 'audio-quality', label: '音频质量检查' },
@@ -60,6 +67,7 @@ export default function HomePage() {
   const getCurrentNavigationItems = () => {
     if (activeTab === 'voice') return voiceNavigationItems;
     if (activeTab === 'sentence') return sentenceNavigationItems;
+    if (activeTab === 'wallet') return walletNavigationItems;
     return reviewNavigationItems;
   };
 
@@ -68,6 +76,7 @@ export default function HomePage() {
     let firstItem = 'different-pronunciation';
     if (tab === 'sentence') firstItem = 'public-domain';
     if (tab === 'review') firstItem = 'review-overview';
+    if (tab === 'wallet') firstItem = 'wallet-api-demo';
     setActiveSection(firstItem);
   };
 
@@ -85,10 +94,11 @@ export default function HomePage() {
         <div className="flex space-x-8 border-b border-gray-200">
           <button
             onClick={() => handleTabChange('voice')}
-            className={`pb-4 font-medium ${activeTab === 'voice'
+            className={`pb-4 font-medium ${
+              activeTab === 'voice'
                 ? 'text-gray-900 border-b-2 border-purple-500'
                 : 'text-gray-500 hover:text-gray-700'
-              }`}
+            }`}
           >
             提交语音
           </button>
@@ -101,6 +111,16 @@ export default function HomePage() {
             }`}
           >
             审核语音
+          </button>
+          <button 
+            onClick={() => handleTabChange('wallet')}
+            className={`pb-4 font-medium ${
+              activeTab === 'wallet' 
+                ? 'text-gray-900 border-b-2 border-purple-500' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            钱包API
           </button>
         </div>
       </div>
@@ -444,6 +464,98 @@ export default function HomePage() {
                       如果遇到了这些准则没有涵盖的内容，请根据您认为的朗读质量来决定。如果您的无法决定，请使用跳过按钮，继
                       续到下一段录音。
                     </p>
+                  </div>
+                </div>
+              </>
+            ) : activeTab === 'wallet' ? (
+              <>
+                <div id="wallet-api-demo">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6">钱包API演示</h2>
+                  <WalletApiDemo />
+                </div>
+
+                <div id="wallet-usage" className="mt-12 pt-8 border-t border-gray-200">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6">使用说明</h2>
+                  <div className="space-y-4 text-gray-700 leading-relaxed">
+                    <h3 className="text-lg font-semibold text-gray-900">1. 钱包连接</h3>
+                    <p>首先确保您已经连接了MetaMask钱包。点击右上角的"连接钱包"按钮完成连接。</p>
+                    
+                    <h3 className="text-lg font-semibold text-gray-900">2. 获取钱包地址</h3>
+                    <p>在项目的任何地方，您都可以通过以下方式获取当前钱包地址：</p>
+                    <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto">
+{`import { useWalletContext } from '../contexts/WalletContext';
+
+function MyComponent() {
+  const { account, isConnected } = useWalletContext();
+  
+  if (isConnected) {
+    console.log('当前钱包地址:', account);
+  }
+}`}
+                    </pre>
+                    
+                    <h3 className="text-lg font-semibold text-gray-900">3. 上传钱包地址</h3>
+                    <p>使用我们提供的工具函数可以轻松将钱包地址上传到您的API：</p>
+                    <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto">
+{`import { uploadWalletAddress } from '../utils/walletApi';
+
+// 基础上传
+const response = await uploadWalletAddress(
+  'https://your-api.com/wallet',
+  account,
+  { additionalData: 'value' }
+);`}
+                    </pre>
+                  </div>
+                </div>
+
+                <div id="api-examples" className="mt-12 pt-8 border-t border-gray-200">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-6">API示例</h2>
+                  <div className="space-y-6 text-gray-700 leading-relaxed">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">1. 用户认证</h3>
+                      <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto">
+{`import { uploadUserAuth } from '../utils/walletApi';
+
+const authResponse = await uploadUserAuth(
+  'https://api.example.com/auth',
+  account,
+  {
+    browser: navigator.userAgent,
+    timestamp: new Date().toISOString()
+  }
+);`}
+                      </pre>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">2. 录音贡献记录</h3>
+                      <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto">
+{`import { uploadRecordingContribution } from '../utils/walletApi';
+
+const recordingResponse = await uploadRecordingContribution(
+  'https://api.example.com/recording',
+  account,
+  {
+    sentenceId: 'sentence_123',
+    duration: 5.2,
+    audioQuality: 'high'
+  }
+);`}
+                      </pre>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">3. 获取用户统计</h3>
+                      <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto">
+{`import { fetchUserStats } from '../utils/walletApi';
+
+const stats = await fetchUserStats(
+  'https://api.example.com/stats',
+  account
+);`}
+                      </pre>
+                    </div>
                   </div>
                 </div>
               </>
