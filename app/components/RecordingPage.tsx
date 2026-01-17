@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useWalletContext } from '../contexts/WalletContext';
 import ConfirmModal from './ConfirmModal';
+import { uploadToCOS } from '../utils/cosUpload';
 
 interface RecordingPageProps {
   onBack?: () => void;
@@ -763,10 +764,10 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
     console.log('completedSentences:', completedSentences);
     
     try {
-      // 显示下载进度
+      // 显示上传进度
       const downloadButton = document.querySelector('[data-download-button]') as HTMLButtonElement;
       if (downloadButton) {
-        downloadButton.textContent = '正在准备下载...';
+        downloadButton.textContent = '正在准备上传...';
         downloadButton.disabled = true;
       }
       
@@ -796,86 +797,155 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
         }
       }
       
-      console.log('最终下载的录音数组:', finalAudios);
+      console.log('最终录音数组:', finalAudios);
       
       // 准备上传数据（只包含有效的录音）
       const audioUploadData: Array<{
         audioUrl: string;
         sentenceId: string;
         sentenceText: string;
-        duration?: number;
         filename: string;
       }> = [];
       
-      // 下载所有录音为WAV文件，并统计结果
-      let successCount = 0;
-      let skippedCount = 0;
-      const skippedFiles: string[] = [];
-      
+      // 直接准备上传数据，不进行本地下载
       for (let i = 0; i < finalAudios.length; i++) {
         const audioUrl = finalAudios[i];
         if (audioUrl) {
-          const filename = `录音_${i + 1}_${sentences[i].substring(0, 10).replace(/[^\w\s]/gi, '')}.wav`;
-          const result = await convertToWav(audioUrl, filename);
+          // 使用安全的英文文件名，避免中文导致的查询和兼容性问题
+          // 格式：recording_序号_时间戳.wav
+          const safeFilename = `recording_${i + 1}_${Date.now()}.wav`;
           
-          if (result.success) {
-            successCount++;
-            
-            // 添加到上传列表
-            audioUploadData.push({
-              audioUrl,
-              sentenceId: `sentence_${i + 1}`,
-              sentenceText: sentences[i] || '',
-              duration: result.duration,
-              filename
-            });
-          } else {
-            skippedCount++;
-            skippedFiles.push(`句子${i + 1}: ${result.error}`);
-          }
-          
-          // 添加延迟，避免浏览器阻止多个下载
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // 添加到上传列表
+          audioUploadData.push({
+            audioUrl,
+            sentenceId: `sentence_${i + 1}`,
+            sentenceText: sentences[i] || '',
+            filename: safeFilename
+          });
         }
       }
       
-      // 上传到云端存储功能已移除
-      // 现在只支持本地下载
+      console.log('准备上传的文件数量:', audioUploadData.length);
+      
+      // 上传到腾讯云 COS（通过后端，私有存储桶）
+      let uploadResults: any[] = [];
+      let uploadSuccessCount = 0;
+      let uploadErrorCount = 0;
+      let uploadErrorMessages: string[] = [];
+      
+      // 检查钱包连接状态
+      if (!isConnected || !account) {
+        console.warn('钱包未连接，跳过云端上传。请连接钱包后重新提交以上传到云端。');
+      } else if (audioUploadData.length > 0) {
+        try {
+          if (downloadButton) {
+            downloadButton.textContent = '正在上传到云端...';
+          }
+          
+          console.log('开始上传到 COS，钱包地址:', account);
+          console.log('待上传文件数量:', audioUploadData.length);
+          
+          // 批量上传所有录音
+          for (const audioData of audioUploadData) {
+            try {
+              // 1. 从 audioUrl 获取 Blob
+              const response = await fetch(audioData.audioUrl);
+              const blob = await response.blob();
+              
+              console.log(`开始上传 ${audioData.sentenceId}，文件大小: ${blob.size} bytes`);
+              
+              // 2. 上传到后端，后端再上传到 COS
+              const result = await uploadToCOS(
+                blob,
+                audioData.filename,
+                account,
+                audioData.sentenceText,
+                audioData.sentenceId
+              );
+              
+              uploadResults.push(result);
+              uploadSuccessCount++;
+              
+              console.log(`✅ 录音 ${audioData.sentenceId} 上传成功:`, result.objectKey);
+              
+              // 添加延迟，避免请求过快
+              await new Promise(resolve => setTimeout(resolve, 300));
+            } catch (error: any) {
+              const errorMsg = error.message || String(error);
+              console.error(`❌ 录音 ${audioData.sentenceId} 上传失败:`, errorMsg);
+              uploadErrorCount++;
+              uploadErrorMessages.push(`${audioData.sentenceId}: ${errorMsg}`);
+              uploadResults.push({
+                error: errorMsg,
+                sentenceId: audioData.sentenceId,
+              });
+            }
+          }
+          
+          // 保存上传结果到 localStorage
+          const uploadHistory = JSON.parse(localStorage.getItem('uploadHistory') || '[]');
+          uploadHistory.push({
+            timestamp: new Date().toISOString(),
+            walletAddress: account,
+            files: uploadResults.filter(r => r.objectKey).map((r: any) => r.objectKey),
+            successCount: uploadSuccessCount,
+            errorCount: uploadErrorCount,
+            errors: uploadErrorMessages,
+          });
+          localStorage.setItem('uploadHistory', JSON.stringify(uploadHistory));
+          
+          console.log('所有录音上传完成:', {
+            success: uploadSuccessCount,
+            error: uploadErrorCount,
+            results: uploadResults,
+          });
+          
+          // 如果有错误，在控制台显示详细信息
+          if (uploadErrorCount > 0) {
+            console.error('上传错误详情:', uploadErrorMessages);
+          }
+          
+        } catch (error: any) {
+          const errorMsg = error.message || String(error);
+          console.error('❌ 上传到 COS 失败:', errorMsg);
+          console.error('完整错误信息:', error);
+          uploadErrorMessages.push(`整体上传失败: ${errorMsg}`);
+          // 上传失败不影响本地下载，继续执行
+        }
+      } else {
+        console.warn('没有可上传的录音文件');
+      }
       
       // 恢复按钮状态
       if (downloadButton) {
-        downloadButton.textContent = '下载完成！';
+        if (uploadSuccessCount > 0) {
+          downloadButton.textContent = `上传完成！成功 ${uploadSuccessCount} 个`;
+        } else if (isConnected && account && uploadErrorCount > 0) {
+          downloadButton.textContent = '上传失败，请重试';
+        } else if (!isConnected || !account) {
+          downloadButton.textContent = '请连接钱包';
+        } else {
+          downloadButton.textContent = '提交录音';
+        }
         setTimeout(() => {
           downloadButton.textContent = '提交录音';
           downloadButton.disabled = false;
         }, 2000);
       }
       
-      // 显示下载结果(已移除alert，直接显示弹窗)
-      // let message = `下载完成！成功下载 ${successCount} 个文件`;
-      // if (isConnected && account && audioUploadData.length > 0) {
-      //   message += `\n同时已上传到云端存储`;
-      // } else if (!isConnected) {
-      //   message += `\n\n提示：连接钱包后可自动上传到云端存储`;
-      // }
-      // if (skippedCount > 0) {
-      //   message += `\n跳过 ${skippedCount} 个超时文件:\n${skippedFiles.join('\n')}`;
-      // }
-      // message += '\n请检查浏览器的下载文件夹。';
-      
-      // alert(message); // 已移除此alert
+      // 上传结果已在按钮文字和控制台日志中显示，不再使用 alert
+      // 用户可以通过按钮文字和控制台查看上传状态
       
       // 提交成功后直接显示确认弹窗，询问是否开始下一轮录音
       setIsConfirmModalOpen(true);
       
     } catch (error) {
-      console.error('下载录音文件失败:', error);
-      alert('下载失败，请重试。');
+      console.error('上传录音文件失败:', error);
       
       // 恢复按钮状态
       const downloadButton = document.querySelector('[data-download-button]') as HTMLButtonElement;
       if (downloadButton) {
-        downloadButton.textContent = '提交录音';
+        downloadButton.textContent = '提交失败，请重试';
         downloadButton.disabled = false;
       }
     }
@@ -1175,10 +1245,10 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
               alignItems: 'center',
               justifyContent: 'center'
             }}>
-              {/* 系统预热状态指示器 */}
+              {/* 系统预热状态指示器 - 炫酷的脉冲动画 */}
               {!isSystemReady && (
                 <div
-                  className="rounded-full flex items-center justify-center transition-all duration-200"
+                  className="flex items-center justify-center"
                   style={{ 
                     width: '80px', 
                     height: '80px',
@@ -1188,16 +1258,41 @@ export default function RecordingPage({ onBack }: RecordingPageProps) {
                     transform: 'translate(-50%, -50%)',
                     zIndex: 1000,
                     cursor: 'not-allowed',
-                    border: '3px solid #e5e7eb',
-                    backgroundColor: '#f9fafb',
-                    borderTopColor: '#10b981'
                   }}
                 >
-                  {/* 旋转的加载指示器 */}
+                  {/* 外层脉冲圆环 - 扩散效果 */}
                   <div
-                    className="animate-spin rounded-full border-2 border-gray-300 border-t-green-500"
-                    style={{ width: '32px', height: '32px' }}
-                  ></div>
+                    className="absolute rounded-full border-4 border-green-400/30 loading-pulse-ring"
+                    style={{
+                      width: '80px',
+                      height: '80px',
+                    }}
+                  />
+                  
+                  {/* 中层旋转圆环 - 渐变边框 */}
+                  <div
+                    className="absolute rounded-full loading-spin"
+                    style={{
+                      width: '60px',
+                      height: '60px',
+                      border: '3px solid transparent',
+                      borderTop: '3px solid #10b981',
+                      borderRight: '3px solid #34d399',
+                      borderBottom: '3px solid #10b981',
+                      borderLeft: '3px solid transparent',
+                    }}
+                  />
+                  
+                  {/* 内层渐变圆点 - 发光效果 */}
+                  <div
+                    className="absolute rounded-full loading-pulse-dot"
+                    style={{
+                      width: '20px',
+                      height: '20px',
+                      background: 'linear-gradient(135deg, #10b981, #34d399)',
+                      boxShadow: '0 0 20px rgba(16, 185, 129, 0.8), 0 0 40px rgba(16, 185, 129, 0.4)',
+                    }}
+                  />
                 </div>
               )}
 

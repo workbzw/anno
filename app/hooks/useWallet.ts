@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 // 钱包状态接口
 interface WalletState {
@@ -160,67 +160,107 @@ export function useWallet() {
     localStorage.removeItem('walletConnected');
   }, []);
 
-  // 检查账户变化
+  // 断开钱包连接（使用 useRef 避免闭包问题）
+  const disconnectWalletRef = useRef(disconnectWallet);
+  disconnectWalletRef.current = disconnectWallet;
+
+  // 检查账户变化 - 使用函数式更新避免闭包问题
   const handleAccountsChanged = useCallback((accounts: string[]) => {
+    console.log('账户变化事件触发:', accounts);
+    
     if (accounts.length === 0) {
       // 用户断开了钱包连接
-      disconnectWallet();
-    } else if (accounts[0] !== walletState.account) {
-      // 账户切换
+      console.log('钱包已断开连接');
+      disconnectWalletRef.current();
+    } else {
+      // 账户切换或连接
       const newAccount = accounts[0];
-      setWalletState(prev => ({
-        ...prev,
-        account: newAccount,
-        isConnected: true,
-      }));
-      localStorage.setItem('walletAccount', newAccount);
+      console.log('账户已切换为:', newAccount);
+      
+      setWalletState(prev => {
+        // 如果账户确实变化了，才更新
+        if (prev.account !== newAccount) {
+          console.log('更新账户状态:', { 旧账户: prev.account, 新账户: newAccount });
+          localStorage.setItem('walletAccount', newAccount);
+          localStorage.setItem('walletConnected', 'true');
+          return {
+            ...prev,
+            account: newAccount,
+            isConnected: true,
+          };
+        }
+        return prev;
+      });
     }
-  }, [walletState.account, disconnectWallet]);
+  }, []);
 
   // 初始化和事件监听
   useEffect(() => {
-    // 检查是否已经连接过
-    if (typeof window !== 'undefined') {
-      const savedAccount = localStorage.getItem('walletAccount');
-      const wasConnected = localStorage.getItem('walletConnected') === 'true';
-      
-      if (savedAccount && wasConnected && isMetaMaskInstalled()) {
-        // 验证账户是否仍然可用
-        window.ethereum!.request({ method: 'eth_accounts' })
-          .then((accounts: string[]) => {
-            if (accounts.includes(savedAccount)) {
-              setWalletState({
-                account: savedAccount,
-                isConnected: true,
-                isConnecting: false,
-                error: null,
-              });
-            } else {
-              // 账户不再可用，清除存储
-              localStorage.removeItem('walletAccount');
-              localStorage.removeItem('walletConnected');
-            }
-          })
-          .catch(() => {
-            // 如果请求失败，清除存储
-            localStorage.removeItem('walletAccount');
-            localStorage.removeItem('walletConnected');
-          });
+    if (typeof window === 'undefined' || !isMetaMaskInstalled()) {
+      return;
+    }
+
+    // 检查当前 MetaMask 账户（优先使用 MetaMask 的当前账户，而不是 localStorage）
+    const checkCurrentAccount = async () => {
+      try {
+        const accounts = await window.ethereum!.request({ method: 'eth_accounts' });
+        
+        if (accounts.length > 0) {
+          const currentAccount = accounts[0];
+          const savedAccount = localStorage.getItem('walletAccount');
+          
+          // 如果 MetaMask 的当前账户与保存的账户不同，使用 MetaMask 的当前账户
+          if (currentAccount !== savedAccount) {
+            console.log('检测到账户变化:', { 保存的账户: savedAccount, MetaMask当前账户: currentAccount });
+            setWalletState({
+              account: currentAccount,
+              isConnected: true,
+              isConnecting: false,
+              error: null,
+            });
+            localStorage.setItem('walletAccount', currentAccount);
+            localStorage.setItem('walletConnected', 'true');
+          } else if (savedAccount === currentAccount) {
+            // 账户一致，恢复状态
+            setWalletState({
+              account: currentAccount,
+              isConnected: true,
+              isConnecting: false,
+              error: null,
+            });
+          }
+        } else {
+          // 没有连接的账户，清除状态
+          const wasConnected = localStorage.getItem('walletConnected') === 'true';
+          if (wasConnected) {
+            console.log('MetaMask 中没有连接的账户，清除本地状态');
+            disconnectWallet();
+          }
+        }
+      } catch (error) {
+        console.error('检查账户失败:', error);
       }
-    }
+    };
 
-    // 监听账户变化
-    if (isMetaMaskInstalled()) {
-      window.ethereum!.on('accountsChanged', handleAccountsChanged);
-    }
+    // 立即检查一次
+    checkCurrentAccount();
 
-    // 清理事件监听器
+    // 监听账户变化事件
+    window.ethereum!.on('accountsChanged', handleAccountsChanged);
+
+    // 定期检查账户变化（作为备用机制，每 2 秒检查一次）
+    const intervalId = setInterval(() => {
+      checkCurrentAccount();
+    }, 2000);
+
+    // 清理事件监听器和定时器
     return () => {
       if (isMetaMaskInstalled()) {
         window.ethereum!.removeListener('accountsChanged', handleAccountsChanged);
       }
+      clearInterval(intervalId);
     };
-  }, [isMetaMaskInstalled, handleAccountsChanged]);
+  }, [isMetaMaskInstalled, handleAccountsChanged, disconnectWallet]);
 
   // 格式化地址显示
   const formatAddress = useCallback((address: string) => {
