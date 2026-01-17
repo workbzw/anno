@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useWalletContext } from '../contexts/WalletContext';
+import { Wallet } from 'lucide-react';
 
 export default function WalletButton() {
   const {
@@ -92,15 +93,7 @@ export default function WalletButton() {
             <span className="hidden sm:inline">安装 MetaMask</span>
           ) : (
             <div className="flex items-center space-x-1 sm:space-x-2">
-              <svg className="w-3 h-3 sm:w-4 sm:h-4" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 2L2 7v10c0 5.55 3.84 9.99 9 11 5.16-1.01 9-5.45 9-11V7l-10-5z"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
+              <Wallet className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="hidden sm:inline">连接钱包</span>
               <span className="sm:hidden">钱包</span>
             </div>
